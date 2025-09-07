@@ -1,0 +1,78 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const serverless = require('serverless-http');
+
+const app = express();
+const router = express.Router();
+
+const { GEMINI_API_KEY } = process.env;
+
+app.use(cors());
+app.use(express.json());
+
+router.post('/generate-quiz', async (req, res) => {
+    if (!GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'API key not configured on the server.' });
+    }
+    try {
+        const { topic, numQuestions } = req.body;
+        if (!topic || !numQuestions) {
+            return res.status(400).json({ error: 'Topic and number of questions are required.' });
+        }
+        
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+        const systemPrompt = `You are an expert quiz creator. Your task is to generate a set of multiple-choice questions on a given topic. The response must be a valid JSON array. Each element is an object representing a question, containing "question" (string), "options" (array of 4 strings), "answer" (string matching one option), and "explanation" (a brief, one-sentence explanation for the correct answer). Do not include any text outside the JSON array.`;
+        const userQuery = `Generate a quiz with ${numQuestions} multiple-choice questions on the topic "${topic}".`;
+        
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "ARRAY",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            question: { type: "STRING" },
+                            options: { type: "ARRAY", items: { type: "STRING" } },
+                            answer: { type: "STRING" },
+                            explanation: { type: "STRING" }
+                        },
+                        required: ["question", "options", "answer", "explanation"]
+                    }
+                }
+            }
+        };
+
+        const googleResponse = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!googleResponse.ok) {
+            const errorBody = await googleResponse.json();
+            throw new Error(`Google API responded with status ${googleResponse.status}: ${errorBody.error?.message}`);
+        }
+
+        const result = await googleResponse.json();
+        const candidate = result.candidates?.[0];
+
+        if (candidate?.content?.parts?.[0]?.text) {
+            const jsonText = candidate.content.parts[0].text;
+            res.status(200).json(JSON.parse(jsonText));
+        } else {
+            throw new Error("Invalid or empty quiz data received from the Google API.");
+        }
+    } catch (error) {
+        console.error('Error in function:', error);
+        res.status(500).json({ error: `Failed to generate quiz. ${error.message}` });
+    }
+});
+
+app.use('/api/', router);
+
+module.exports.handler = serverless(app);
+

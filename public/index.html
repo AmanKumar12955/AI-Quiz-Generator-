@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Quiz Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #app {
+            transition: all 0.3s ease-in-out;
+        }
+        .spinner {
+            border-top-color: #0891b2; /* cyan-600 */
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(3og); }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-100 flex items-center justify-center min-h-screen p-4">
+    <main id="app" class="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8">
+        <!-- App content will be rendered here by JavaScript -->
+    </main>
+
+    <script>
+        // --- STATE MANAGEMENT ---
+        const state = {
+            currentView: 'setup', // 'setup', 'loading', 'quiz', 'results'
+            topic: '',
+            numQuestions: 10,
+            quizData: [],
+            userAnswers: [],
+            score: 0
+        };
+
+        // --- API COMMUNICATION ---
+        const api = {
+            generateQuiz: async (topic, numQuestions) => {
+                const response = await fetch('/api/generate-quiz', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, numQuestions }),
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to fetch quiz data.');
+                }
+                return await response.json();
+            }
+        };
+
+        // --- UI TEMPLATES ---
+        const templates = {
+            setup: () => `
+                <div class="text-center">
+                    <h1 class="text-3xl font-bold text-slate-800">AI Quiz Generator</h1>
+                    <p class="text-slate-500 mt-2">Enter any topic and let AI create a quiz for you!</p>
+                </div>
+                <form id="setup-form" class="mt-8 space-y-6">
+                    <div>
+                        <label for="topic" class="block text-sm font-medium text-slate-700">Topic</label>
+                        <input type="text" id="topic" class="mt-1 w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-cyan-500" placeholder="e.g., The Renaissance" required>
+                    </div>
+                    <div>
+                        <label for="num-questions" class="block text-sm font-medium text-slate-700">Number of Questions (1-50)</label>
+                        <input type="number" id="num-questions" value="10" min="1" max="50" class="mt-1 w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-cyan-500" required>
+                    </div>
+                    <button type="submit" class="w-full bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-cyan-700 transition-transform transform hover:scale-105">
+                        Generate Quiz
+                    </button>
+                </form>
+            `,
+            loading: () => `
+                <div class="text-center py-12">
+                    <div class="spinner w-16 h-16 rounded-full border-4 border-slate-200 mx-auto"></div>
+                    <h2 class="text-2xl font-semibold mt-6 text-slate-800">Crafting Your Quiz...</h2>
+                    <p class="text-slate-500 mt-2">The AI is hard at work. This might take a moment.</p>
+                </div>
+            `,
+            quiz: () => `
+                <h2 class="text-2xl font-bold text-center mb-6 text-slate-800">Quiz on: ${state.topic}</h2>
+                <div id="quiz-container" class="space-y-6">
+                    ${state.quizData.map((item, index) => `
+                        <div class="question-card" data-question-index="${index}">
+                            <p class="text-lg font-medium text-slate-800">${index + 1}. ${item.question}</p>
+                            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                ${item.options.map(option => `
+                                    <button class="option-btn text-left p-3 border-2 border-slate-200 rounded-lg hover:bg-slate-100 hover:border-cyan-500 transition">
+                                        ${option}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button id="submit-quiz-btn" class="w-full mt-8 bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-cyan-700 transition-transform transform hover:scale-105">
+                    Submit Answers
+                </button>
+            `,
+            results: () => `
+                <div class="text-center">
+                    <h2 class="text-3xl font-bold text-slate-800">Quiz Complete!</h2>
+                    <p class="text-xl text-slate-600 mt-2">You scored</p>
+                    <p class="text-6xl font-bold text-cyan-600 my-4">${state.score} / ${state.quizData.length}</p>
+                </div>
+                <div id="results-container" class="mt-8 space-y-6">
+                    ${state.quizData.map((item, index) => {
+                        const userAnswer = state.userAnswers[index];
+                        const isCorrect = userAnswer === item.answer;
+                        return `
+                        <div class="p-4 border rounded-lg ${isCorrect ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}">
+                            <p class="font-medium text-slate-800">${index + 1}. ${item.question}</p>
+                            <p class="text-sm mt-2 font-bold ${isCorrect ? 'text-emerald-700' : 'text-red-700'}">
+                                ${isCorrect ? `Correct! You answered: ${userAnswer}` : `Incorrect. You answered: ${userAnswer}`}
+                            </p>
+                            ${!isCorrect ? `<p class="text-sm mt-1 font-bold text-slate-700">Correct Answer: ${item.answer}</p>` : ''}
+                            <div class="mt-3 p-3 bg-slate-100 text-slate-700 rounded-lg text-sm">
+                                <strong>Explanation:</strong> ${item.explanation}
+                            </div>
+                        </div>
+                        `}).join('')}
+                </div>
+                 <button id="restart-quiz-btn" class="w-full mt-8 bg-slate-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-800 transition-transform transform hover:scale-105">
+                    Create Another Quiz
+                </button>
+            `
+        };
+
+        // --- RENDER & EVENT HANDLING ---
+        const app = document.getElementById('app');
+
+        const render = () => {
+            app.innerHTML = templates[state.currentView]();
+            addEventListeners();
+        };
+
+        const addEventListeners = () => {
+            if (state.currentView === 'setup') {
+                const form = document.getElementById('setup-form');
+                form.addEventListener('submit', handleSetupSubmit);
+            }
+            if (state.currentView === 'quiz') {
+                const quizContainer = document.getElementById('quiz-container');
+                quizContainer.addEventListener('click', handleOptionSelect);
+                document.getElementById('submit-quiz-btn').addEventListener('click', handleSubmitQuiz);
+            }
+            if (state.currentView === 'results') {
+                document.getElementById('restart-quiz-btn').addEventListener('click', handleRestart);
+            }
+        };
+
+        const handleSetupSubmit = async (e) => {
+            e.preventDefault();
+            state.topic = document.getElementById('topic').value;
+            state.numQuestions = document.getElementById('num-questions').value;
+            state.currentView = 'loading';
+            render();
+
+            try {
+                const quizData = await api.generateQuiz(state.topic, state.numQuestions);
+                state.quizData = quizData;
+                state.userAnswers = new Array(quizData.length).fill(null);
+                state.currentView = 'quiz';
+                render();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+                state.currentView = 'setup';
+                render();
+            }
+        };
+
+        const handleOptionSelect = (e) => {
+            if (!e.target.classList.contains('option-btn')) return;
+
+            const questionCard = e.target.closest('.question-card');
+            const questionIndex = parseInt(questionCard.dataset.questionIndex, 10);
+            const selectedAnswer = e.target.innerText;
+
+            state.userAnswers[questionIndex] = selectedAnswer;
+
+            // Visual feedback
+            questionCard.querySelectorAll('.option-btn').forEach(btn => {
+                btn.classList.remove('bg-cyan-600', 'text-white');
+            });
+            e.target.classList.add('bg-cyan-600', 'text-white');
+        };
+
+        const handleSubmitQuiz = () => {
+            state.score = 0;
+            for (let i = 0; i < state.quizData.length; i++) {
+                if (state.userAnswers[i] === state.quizData[i].answer) {
+                    state.score++;
+                }
+            }
+            state.currentView = 'results';
+            render();
+        };
+
+        const handleRestart = () => {
+            // Reset state
+            Object.assign(state, {
+                currentView: 'setup',
+                topic: '',
+                quizData: [],
+                userAnswers: [],
+                score: 0
+            });
+            render();
+        };
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
+
