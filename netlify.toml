@@ -1,13 +1,11 @@
 [build]
-  # This tells Netlify that your frontend files are in the "public" folder.
   publish = "public"
-  # This tells Netlify where to find your backend serverless functions.
   functions = "netlify/functions"
 
 [[redirects]]
-  # This rule makes your backend function available at a clean URL.
-  # Any request to yoursite.com/api/... will be sent to your function.
-  from = "/api/*"
-  to = "/.netlify/functions/generateQuiz/:splat"
+  # This rule specifically sends requests from "/api/generate-quiz"
+  # directly to the "generateQuiz" function.
+  from = "/api/generate-quiz"
+  to = "/.netlify/functions/generateQuiz"
   status = 200
 
